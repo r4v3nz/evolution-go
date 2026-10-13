@@ -1,3 +1,5 @@
+// Modified in the r4v3nz/evolution-go fork (fail-closed proxy): see FORK.md.
+
 package whatsmeow_service
 
 import (
@@ -6,11 +8,11 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image/png"
 	"io"
 	"math/rand"
-	"net/http"
 	"os"
 	"regexp"
 	"strconv"
@@ -362,6 +364,17 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 		}
 	}
 
+	// Fork change (fail-closed proxy): decide the proxy before any request to
+	// WhatsApp (the version check included); without it, do not connect.
+	proxyAddress, err := resolveProxyAddress(cd.Instance.Proxy, w.config)
+	if err == nil && proxyAddress == "" && w.config.ProxyRequired {
+		err = errProxyRequired
+	}
+	if err != nil {
+		w.refuseWithoutProxy(cd, err)
+		return
+	}
+
 	var version clientVersion
 
 	platformID, ok := waCompanionReg.DeviceProps_PlatformType_value[strings.ToUpper("chrome")]
@@ -391,7 +404,7 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 		}
 	} else {
 		// Try to fetch version from WhatsApp Web
-		webVersion, err := fetchWhatsAppWebVersion()
+		webVersion, err := fetchWhatsAppWebVersion(proxyAddress)
 		if err != nil {
 			w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Failed to fetch WhatsApp Web version: %v", cd.Instance.Id, err)
 		} else {
@@ -414,51 +427,13 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 
 	w.clientPointer[cd.Instance.Id] = client
 
-	if cd.IsProxy {
-		var proxyConfig ProxyConfig
-		err := json.Unmarshal([]byte(cd.Instance.Proxy), &proxyConfig)
-		if err != nil {
-			w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] error unmarshalling proxy config", cd.Instance.Id)
+	// Fork change (fail-closed proxy): upstream continued without the proxy here.
+	if proxyAddress != "" {
+		if err := client.SetProxyAddress(proxyAddress); err != nil {
+			w.refuseWithoutProxy(cd, errors.New("the proxy address was rejected (check protocol/host/port)"))
 			return
 		}
-
-		proxyProtocol := proxyConfig.Protocol
-		proxyHost := proxyConfig.Host
-		proxyPort := proxyConfig.Port
-		proxyUsername := proxyConfig.Username
-		proxyPassword := proxyConfig.Password
-
-		if proxyConfig.Host == "" {
-			proxyHost = w.config.ProxyHost
-		}
-
-		if proxyConfig.Port == "" {
-			proxyPort = w.config.ProxyPort
-		}
-
-		if proxyConfig.Protocol == "" {
-			proxyProtocol = w.config.ProxyProtocol
-		}
-
-		if proxyConfig.Username == "" {
-			proxyUsername = w.config.ProxyUsername
-		}
-
-		if proxyConfig.Password == "" {
-			proxyPassword = w.config.ProxyPassword
-		}
-
-		proxyAddress, err := utils.BuildProxyAddress(proxyProtocol, proxyHost, proxyPort, proxyUsername, proxyPassword)
-		if err != nil {
-			w.loggerWrapper.GetLogger(cd.Instance.Id).LogWarn("[%s] Proxy error, continuing without proxy: %v", cd.Instance.Id, err)
-		} else {
-			err = client.SetProxyAddress(proxyAddress)
-			if err != nil {
-				w.loggerWrapper.GetLogger(cd.Instance.Id).LogWarn("[%s] Proxy error, continuing without proxy: %v", cd.Instance.Id, err)
-			} else {
-				w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] Proxy enabled (%s)", cd.Instance.Id, utils.NormalizeProxyProtocol(proxyProtocol, proxyPort))
-			}
-		}
+		w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] Proxy enabled (%s)", cd.Instance.Id, redactProxy(proxyAddress))
 	}
 
 	client.EnableAutoReconnect = false
@@ -515,18 +490,9 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 					return
 				}
 			} else if strings.Contains(err.Error(), "username/password authentication failed") {
-				w.loggerWrapper.GetLogger(cd.Instance.Id).LogWarn("[%s] Proxy authentication failed, attempting to connect without proxy", cd.Instance.Id)
-
-				// Desabilita o proxy
-				client.SetProxy(nil)
-
-				// Tenta conectar sem proxy
-				err = client.Connect()
-				if err != nil {
-					w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Failed to connect even without proxy: %v", cd.Instance.Id, err)
-					return
-				}
-				w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] Successfully connected without proxy", cd.Instance.Id)
+				// Fork change (fail-closed proxy): upstream retried WITHOUT the proxy here.
+				w.refuseWithoutProxy(cd, errors.New("the proxy rejected the username/password"))
+				return
 			} else {
 				w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Failed to connect: %v", cd.Instance.Id, err)
 				return
@@ -550,18 +516,9 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 					return
 				}
 			} else if strings.Contains(err.Error(), "username/password authentication failed") {
-				w.loggerWrapper.GetLogger(cd.Instance.Id).LogWarn("[%s] Proxy authentication failed during QR connection, attempting without proxy", cd.Instance.Id)
-
-				// Desabilita o proxy
-				client.SetProxy(nil)
-
-				// Tenta conectar sem proxy
-				err = client.Connect()
-				if err != nil {
-					w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Failed to connect even without proxy: %v", cd.Instance.Id, err)
-					return
-				}
-				w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] Successfully connected without proxy", cd.Instance.Id)
+				// Fork change (fail-closed proxy): upstream retried WITHOUT the proxy here.
+				w.refuseWithoutProxy(cd, errors.New("the proxy rejected the username/password"))
+				return
 			} else {
 				w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Failed to connect: %v", cd.Instance.Id, err)
 				return
@@ -2610,7 +2567,7 @@ var (
 	webVersionCacheTTL = 1 * time.Hour
 )
 
-func fetchWhatsAppWebVersion() (*clientVersion, error) {
+func fetchWhatsAppWebVersion(proxyAddress string) (*clientVersion, error) {
 	cachedWebVersionMu.Lock()
 	defer cachedWebVersionMu.Unlock()
 
@@ -2618,7 +2575,12 @@ func fetchWhatsAppWebVersion() (*clientVersion, error) {
 		return cachedWebVersion, nil
 	}
 
-	resp, err := http.Get("https://web.whatsapp.com/sw.js")
+	// Fork change (fail-closed proxy): through the instance proxy, if any.
+	httpClient, err := webVersionClient(proxyAddress)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := httpClient.Get("https://web.whatsapp.com/sw.js")
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch WhatsApp Web version: %v", err)
 	}

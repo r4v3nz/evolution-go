@@ -1,3 +1,5 @@
+// Modified in the r4v3nz/evolution-go fork (fail-closed proxy): see FORK.md.
+
 package config
 
 import (
@@ -52,6 +54,7 @@ type Config struct {
 	ProxyPort            string
 	ProxyUsername        string
 	ProxyPassword        string
+	ProxyRequired        bool // fork: PROXY_REQUIRED=true refuses instances without a proxy
 	AmqpGlobalEvents     []string
 	AmqpSpecificEvents   []string
 	NatsUrl              string
@@ -371,6 +374,7 @@ func Load() *Config {
 		ProxyPort:            proxyPort,
 		ProxyUsername:        proxyUsername,
 		ProxyPassword:        proxyPassword,
+		ProxyRequired:        os.Getenv(config_env.PROXY_REQUIRED) == "true",
 		EventIgnoreGroup:     eventIgnoreGroup == "true",
 		EventIgnoreStatus:    eventIgnoreStatus == "true",
 		QrcodeMaxCount:       qrMaxCount,

@@ -1,3 +1,5 @@
+> **Unofficial fork** (not affiliated with or endorsed by Evolution Foundation): WhatsApp connections never fall back to a direct connection when a proxy is configured. See [FORK.md](FORK.md).
+
 <p align="center">
   <a href="https://evolutionfoundation.com.br">
     <img src="./public/hover-evolution.png" alt="Evolution Foundation" />

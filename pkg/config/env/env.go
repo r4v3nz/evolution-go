@@ -1,3 +1,5 @@
+// Modified in the r4v3nz/evolution-go fork (fail-closed proxy): see FORK.md.
+
 package config_env
 
 const (
@@ -38,6 +40,7 @@ const (
 	PROXY_PORT              = "PROXY_PORT"
 	PROXY_USERNAME          = "PROXY_USERNAME"
 	PROXY_PASSWORD          = "PROXY_PASSWORD"
+	PROXY_REQUIRED          = "PROXY_REQUIRED" // fork: refuse to connect instances without a proxy
 	NATS_URL                = "NATS_URL"
 	NATS_GLOBAL_ENABLED     = "NATS_GLOBAL_ENABLED"
 	NATS_GLOBAL_EVENTS      = "NATS_GLOBAL_EVENTS"
