@@ -307,6 +307,10 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 
 	w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("Starting websocket connection to Whatsapp for user '%s'", cd.Instance.Id)
 
+	// Fork change: "starting" until the connection attempt is over (see stuck_client.go).
+	clientStarting.Store(cd.Instance.Id, struct{}{})
+	defer clientStarting.Delete(cd.Instance.Id)
+
 	var deviceStore *store.Device
 	var err error
 
@@ -534,6 +538,7 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 	}
 
 	proxyRetry.reset(cd.Instance.Id) // fork: connected, restart the retry backoff
+	clientStarting.Delete(cd.Instance.Id)
 
 	// Removed auto-reconnect logic to prevent infinite loops
 

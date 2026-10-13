@@ -1,3 +1,5 @@
+// Modified in the r4v3nz/evolution-go fork (fail-closed proxy): see FORK.md.
+
 package instance_handler
 
 import (
@@ -89,6 +91,7 @@ func (i *instanceHandler) Create(ctx *gin.Context) {
 	} else {
 		if i.config.ProxyHost != "" && i.config.ProxyPort != "" && i.config.ProxyUsername != "" && i.config.ProxyPassword != "" {
 			data.Proxy = &instance_service.ProxyConfig{
+				Protocol: i.config.ProxyProtocol, // fork: upstream dropped it, so it became "http" from the port
 				Host:     i.config.ProxyHost,
 				Port:     i.config.ProxyPort,
 				Username: i.config.ProxyUsername,

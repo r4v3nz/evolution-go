@@ -1,3 +1,5 @@
+// Modified in the r4v3nz/evolution-go fork (fail-closed proxy): see FORK.md.
+
 package instance_service
 
 import (
@@ -281,6 +283,12 @@ func (i instances) Connect(data *ConnectStruct, instance *instance_model.Instanc
 		}
 
 		go i.whatsmeowService.StartClient(clientData)
+	} else if client := i.clientPointer[instance.Id]; client != nil && !client.IsConnected() &&
+		!whatsmeow_service.ClientStarting(instance.Id) && whatsmeow_service.AllowRestart(instance.Id, time.Now()) {
+		// Fork change: upstream answered "already running" for a client stuck after a
+		// failed connection and never tried again.
+		i.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Client in memory but not connected: restarting it", instance.Id)
+		go i.whatsmeowService.ReconnectClient(instance.Id)
 	} else {
 		i.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Instance already running, settings updated without restarting client", instance.Id)
 	}
@@ -442,6 +450,12 @@ func (i instances) GetQr(instance *instance_model.Instance) (*QrcodeStruct, erro
 	} else if !client.IsConnected() {
 		// Se o cliente existe mas não está conectado, pode estar aguardando QR code
 		logger.LogInfo("[%s] Client exists but not connected, checking for existing QR code", instance.Id)
+		// Fork change: neither connected nor starting means the connection failed and
+		// upstream never retries; restart it so a following poll gets a QR code.
+		if client.Store.ID == nil && !whatsmeow_service.ClientStarting(instance.Id) && whatsmeow_service.AllowRestart(instance.Id, time.Now()) {
+			logger.LogInfo("[%s] Client stuck after a failed connection: restarting it for a new QR code", instance.Id)
+			go i.whatsmeowService.ReconnectClient(instance.Id)
+		}
 	}
 
 	// Buscar instância atualizada do banco para pegar o QR code mais recente

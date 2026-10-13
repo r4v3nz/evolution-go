@@ -40,13 +40,25 @@ Also:
 * `/user/check`: when the WhatsApp query fails, upstream answered **200 with
   `data: null`**, which clients read as "not on WhatsApp" (deleting leads,
   caching "no WhatsApp"). It is now an error (HTTP 500).
+* instances created without a proxy get the `PROXY_*` environment **including
+  `PROXY_PROTOCOL`** (upstream dropped it, so the copy became `http` from the
+  port and the instance could not talk to a SOCKS5 proxy: no QR code). A stored
+  proxy that is such a copy (same host, port and user as the environment)
+  follows the environment as a whole, which also fixes instances created
+  before;
+* a client left in memory after a failed connection is restarted by
+  `/instance/connect` (upstream: "already running", forever) and, for a device
+  not paired yet, by `/instance/qr` polling (at most every 30 s), so the QR code
+  shows up instead of an endless "no QR code available".
 
 Only WhatsApp traffic is affected: webhooks, S3/MinIO, link previews and media
 downloaded from URLs you send keep using the server connection, as upstream.
 
 Files: `pkg/whatsmeow/service/proxy_failclosed.go` (+ `_test.go`, new),
 `pkg/user/service/checkuser_failclosed_test.go` (new),
+`pkg/whatsmeow/service/stuck_client.go` (new),
 `pkg/whatsmeow/service/whatsmeow.go`, `pkg/user/service/user_service.go`,
+`pkg/instance/handler/instance_handler.go`, `pkg/instance/service/instance_service.go`,
 `pkg/sendMessage/service/send_service.go`, `pkg/message/service/message_service.go`,
 `pkg/config/config.go`, `pkg/config/env/env.go` (marked "Fork change"/"fork:").
 

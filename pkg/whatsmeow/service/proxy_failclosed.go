@@ -38,6 +38,13 @@ func resolveProxyAddress(instanceProxy string, cfg *config.Config) (string, erro
 			return "", errors.New("stored proxy configuration is not valid JSON")
 		}
 	}
+	// Upstream copies the PROXY_* environment into every instance created
+	// without a proxy, but without PROXY_PROTOCOL (which then becomes "http"
+	// from the port). A stored proxy that is such a copy (same host, port and
+	// user) follows the environment as a whole: protocol and password too.
+	if pc.Host != "" && pc.Host == cfg.ProxyHost && pc.Port == cfg.ProxyPort && pc.Username == cfg.ProxyUsername {
+		pc = ProxyConfig{}
+	}
 	if pc.Host == "" && (cfg.ProxyHost == "" || cfg.ProxyPort == "") {
 		if instanceProxy != "" && (pc.Port != "" || pc.Username != "" || pc.Protocol != "") {
 			return "", errors.New("stored proxy configuration has no host")

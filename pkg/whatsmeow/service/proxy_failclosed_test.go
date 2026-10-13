@@ -45,6 +45,11 @@ func TestResolveProxyAddress(t *testing.T) {
 		{"stored proxy without host", `{"port":"10800","username":"u"}`, &config.Config{}, "", true},
 		{"bad port", `{"protocol":"socks5","host":"10.66.0.2","port":"x y","username":"u","password":"s3cr3t"}`, &config.Config{}, "", true},
 		{"unsupported protocol", `{"protocol":"ftp","host":"10.66.0.2","port":"10800"}`, &config.Config{}, "", true},
+		{"stored copy of the environment follows it (upstream saved it as http)",
+			`{"protocol":"http","host":"10.66.0.2","port":"10800","username":"evolution","password":"old-secret"}`, env,
+			"socks5://evolution:env-secret@10.66.0.2:10800", false},
+		{"a proxy of its own keeps its protocol", `{"protocol":"http","host":"10.66.0.9","port":"8080","username":"u","password":"p"}`, env,
+			"http://u:p@10.66.0.9:8080", false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -288,5 +293,31 @@ func TestProxyUnavailableSignal(t *testing.T) {
 	proxyRetry.reset(id) // a successful connection
 	if ProxyUnavailable(id) {
 		t.Fatal("a successful connection must clear it")
+	}
+}
+
+func TestStuckClientHelpers(t *testing.T) {
+	id := "stuck-test"
+	if ClientStarting(id) {
+		t.Fatal("not started yet")
+	}
+	clientStarting.Store(id, struct{}{})
+	if !ClientStarting(id) {
+		t.Fatal("must report a start in progress")
+	}
+	clientStarting.Delete(id)
+
+	now := time.Now()
+	if !AllowRestart(id, now) {
+		t.Fatal("first restart must be allowed")
+	}
+	if AllowRestart(id, now.Add(10*time.Second)) {
+		t.Fatal("polling must not restart again within the interval")
+	}
+	if !AllowRestart(id, now.Add(restartInterval+time.Second)) {
+		t.Fatal("after the interval a new restart is allowed")
+	}
+	if !AllowRestart("other-instance", now) {
+		t.Fatal("instances are independent")
 	}
 }
