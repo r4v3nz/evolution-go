@@ -217,7 +217,8 @@ func TestRejectedProxyPasswordIsDetected(t *testing.T) {
 
 func TestProxyRetryBackoff(t *testing.T) {
 	r := &proxyRetrier{attempts: map[string]int{}, pending: map[string]bool{}, base: 10 * time.Second, max: 2 * time.Minute}
-	want := []time.Duration{10 * time.Second, 20 * time.Second, 40 * time.Second, 80 * time.Second, 2 * time.Minute, 2 * time.Minute}
+	r.max = 30 * time.Second
+	want := []time.Duration{10 * time.Second, 20 * time.Second, 30 * time.Second, 30 * time.Second, 30 * time.Second}
 	for i, w := range want {
 		d, ok := r.next("a")
 		if !ok || d != w {
@@ -265,5 +266,27 @@ func TestShouldRetryProxy(t *testing.T) {
 		if shouldRetryProxy(inst, connected) {
 			t.Errorf("%s: must not retry", name)
 		}
+	}
+}
+
+func TestProxyUnavailableSignal(t *testing.T) {
+	id := "fast-fail-test"
+	proxyRetry.reset(id)
+	if ProxyUnavailable(id) {
+		t.Fatal("no failed attempt yet")
+	}
+	if _, ok := proxyRetry.next(id); !ok {
+		t.Fatal("first failure must schedule a retry")
+	}
+	if !ProxyUnavailable(id) {
+		t.Fatal("after a failure through the proxy the instance must fail fast")
+	}
+	if !strings.Contains(ErrProxyUnavailable.Error(), "not connected") || !strings.Contains(ErrProxyUnavailable.Error(), "nothing was sent") {
+		t.Fatalf("clients match on these words: %q", ErrProxyUnavailable)
+	}
+	proxyRetry.done(id)
+	proxyRetry.reset(id) // a successful connection
+	if ProxyUnavailable(id) {
+		t.Fatal("a successful connection must clear it")
 	}
 }

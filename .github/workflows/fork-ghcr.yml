@@ -20,7 +20,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Fail-closed proxy tests
-        run: go test -count=1 ./pkg/whatsmeow/service/ -run 'TestResolveProxyAddress|TestWebVersionCheckGoesThroughProxy|TestRejectedProxyPasswordIsDetected|TestProxyRetryBackoff|TestShouldRetryProxy'
+        run: go test -count=1 ./pkg/whatsmeow/service/ ./pkg/user/service/ -run 'TestResolveProxyAddress|TestWebVersionCheckGoesThroughProxy|TestRejectedProxyPasswordIsDetected|TestProxyRetryBackoff|TestShouldRetryProxy|TestProxyUnavailableSignal|TestFailedWhatsAppCheckIsAnError'
 
       - name: Read version
         id: version

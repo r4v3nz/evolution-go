@@ -1,3 +1,5 @@
+// Modified in the r4v3nz/evolution-go fork (fail-closed proxy): see FORK.md.
+
 package send_service
 
 import (
@@ -382,6 +384,12 @@ type MessageSendStruct struct {
 func (s *sendService) ensureClientConnected(instanceId string) (*whatsmeow.Client, error) {
 	client := s.clientPointer[instanceId]
 	s.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Checking client connection status - Client exists: %v", instanceId, client != nil)
+
+	// Fork change (fail-closed proxy): the instance waits for its proxy; fail
+	// now instead of reconnecting through a proxy known to be down.
+	if (client == nil || !client.IsConnected()) && whatsmeow_service.ProxyUnavailable(instanceId) {
+		return nil, whatsmeow_service.ErrProxyUnavailable
+	}
 
 	if client == nil {
 		s.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] No client found, attempting to start new instance", instanceId)

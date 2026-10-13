@@ -116,10 +116,27 @@ func (w whatsmeowService) refuseWithoutProxy(cd *ClientData, reason error) {
 // Upstream never retries a failed connection, so a short proxy outage (e.g. a
 // mobile uplink renewing its IP) left logged-in instances offline until
 // someone reconnected them by hand. Here a logged-in instance whose proxy is
-// unreachable is retried with backoff (10 s doubling up to 2 min), always
-// through the proxy. A rejected password is not retried.
+// unreachable is retried with backoff (10 s, 20 s, then every 30 s), always
+// through the proxy, so it is back at most ~30 s after the proxy. A rejected
+// password is not retried. While it waits, the send/user/message endpoints
+// fail at once with ErrProxyUnavailable instead of reconnecting through a
+// proxy known to be down (upstream spent ~36 s on that, past most clients'
+// HTTP timeouts, leaving them unsure whether the message went out).
 
 const proxyRetryReason = "proxy unavailable"
+
+// ErrProxyUnavailable: the instance is not connected because its proxy is
+// unreachable, so nothing was sent. The text keeps "not connected" for
+// clients that recognise a lost session by it.
+var ErrProxyUnavailable = errors.New("proxy unavailable: instance not connected until its proxy is reachable again; nothing was sent")
+
+// ProxyUnavailable reports whether the instance's last connection attempt
+// failed because its proxy was unreachable, with no successful one since.
+func ProxyUnavailable(instanceId string) bool {
+	proxyRetry.mu.Lock()
+	defer proxyRetry.mu.Unlock()
+	return proxyRetry.attempts[instanceId] > 0
+}
 
 type proxyRetrier struct {
 	mu       sync.Mutex
@@ -130,7 +147,7 @@ type proxyRetrier struct {
 }
 
 var proxyRetry = &proxyRetrier{attempts: map[string]int{}, pending: map[string]bool{},
-	base: 10 * time.Second, max: 2 * time.Minute}
+	base: 10 * time.Second, max: 30 * time.Second}
 
 // next returns the delay of the next retry, or false if one is already pending.
 func (r *proxyRetrier) next(id string) (time.Duration, bool) {
@@ -170,16 +187,23 @@ func shouldRetryProxy(inst *instance_model.Instance, connectedNow bool) bool {
 
 func (w whatsmeowService) retryWhenProxyIsBack(cd *ClientData, cause error) {
 	id := cd.Instance.Id
-	delay, ok := proxyRetry.next(id)
-	if !ok {
-		return
+	delay, scheduled := proxyRetry.next(id)
+	// The reason is written even when a retry is already pending: an
+	// automatic reconnect in between (e.g. upstream's on "Disconnected")
+	// overwrites it with "Reconnecting", and the pending retry would then
+	// take that for a manual change and give up for good.
+	reason := fmt.Sprintf("%s (retrying): %v", proxyRetryReason, cause)
+	if scheduled {
+		reason = fmt.Sprintf("%s (retry in %s): %v", proxyRetryReason, delay, cause)
 	}
-	reason := fmt.Sprintf("%s (retry in %s): %v", proxyRetryReason, delay, cause)
 	w.loggerWrapper.GetLogger(id).LogWarn("[%s] %s", id, reason)
 	cd.Instance.Connected = false
 	cd.Instance.DisconnectReason = reason
 	if err := w.instanceRepository.UpdateConnected(id, false, reason); err != nil {
 		w.loggerWrapper.GetLogger(id).LogError("[%s] Error updating instance: %s", id, err)
+	}
+	if !scheduled {
+		return
 	}
 	time.AfterFunc(delay, func() {
 		proxyRetry.done(id)

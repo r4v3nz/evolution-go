@@ -1,3 +1,5 @@
+// Modified in the r4v3nz/evolution-go fork (fail-closed proxy): see FORK.md.
+
 package user_service
 
 import (
@@ -112,6 +114,12 @@ func (u *userService) ensureClientConnected(instanceId string) (*whatsmeow.Clien
 	client := u.clientPointer[instanceId]
 	u.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Checking client connection status - Client exists: %v", instanceId, client != nil)
 
+	// Fork change (fail-closed proxy): the instance waits for its proxy; fail
+	// now instead of reconnecting through a proxy known to be down.
+	if (client == nil || !client.IsConnected()) && whatsmeow_service.ProxyUnavailable(instanceId) {
+		return nil, whatsmeow_service.ErrProxyUnavailable
+	}
+
 	if client == nil {
 		u.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] No client found, attempting to start new instance", instanceId)
 		err := u.whatsmeowService.StartInstance(instanceId)
@@ -205,8 +213,13 @@ func (u *userService) CheckUser(data *CheckUserStruct, instance *instance_model.
 		formatJid = *data.FormatJid
 	}
 
-	// First attempt with the requested formatJid setting
-	uc, shouldRetry := u.performCheckUser(client, data.Number, formatJid, instance.Id)
+	// First attempt with the requested formatJid setting.
+	// Fork change: upstream answered 200 with no data when the query failed,
+	// which clients read as "not on WhatsApp".
+	uc, shouldRetry, err := u.performCheckUser(client, data.Number, formatJid, instance.Id)
+	if err != nil {
+		return nil, err
+	}
 	if !shouldRetry {
 		return uc, nil
 	}
@@ -214,7 +227,7 @@ func (u *userService) CheckUser(data *CheckUserStruct, instance *instance_model.
 	// If formatJid was true and we got false results, retry with formatJid=false
 	if formatJid {
 		u.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Some users not found with formatJid=true, retrying with formatJid=false", instance.Id)
-		ucRetry, _ := u.performCheckUser(client, data.Number, false, instance.Id)
+		ucRetry, _, _ := u.performCheckUser(client, data.Number, false, instance.Id) // on failure the first answer stands
 
 		// Merge results: use retry results for users that weren't found in first attempt
 		return u.mergeCheckUserResults(uc, ucRetry), nil
@@ -224,18 +237,21 @@ func (u *userService) CheckUser(data *CheckUserStruct, instance *instance_model.
 }
 
 // performCheckUser executes the actual user check with specified formatJid
-func (u *userService) performCheckUser(client *whatsmeow.Client, numbers []string, formatJid bool, instanceId string) (*CheckUserCollection, bool) {
+func (u *userService) performCheckUser(client *whatsmeow.Client, numbers []string, formatJid bool, instanceId string) (*CheckUserCollection, bool, error) {
 	// Use centralized function to prepare numbers for WhatsApp check
 	phoneNumbers, err := utils.PrepareNumbersForWhatsAppCheck(numbers, &formatJid)
 	if err != nil {
 		u.loggerWrapper.GetLogger(instanceId).LogWarn("[%s] Failed to prepare numbers for WhatsApp check: %v", instanceId, err)
-		return nil, false
+		return nil, false, fmt.Errorf("invalid number for the WhatsApp check: %w", err)
 	}
 
 	resp, err := client.IsOnWhatsApp(context.Background(), phoneNumbers)
 	if err != nil {
 		u.loggerWrapper.GetLogger(instanceId).LogError("[%s] Failed to check users on WhatsApp: %v", instanceId, err)
-		return nil, false
+		return nil, false, fmt.Errorf("WhatsApp check failed, nothing is known about these numbers: %w", err)
+	}
+	if len(resp) == 0 && len(phoneNumbers) > 0 {
+		return nil, false, errors.New("WhatsApp returned no result for the check, nothing is known about these numbers")
 	}
 
 	uc := new(CheckUserCollection)
@@ -284,7 +300,7 @@ func (u *userService) performCheckUser(client *whatsmeow.Client, numbers []strin
 		}
 	}
 
-	return uc, shouldRetry
+	return uc, shouldRetry, nil
 }
 
 // mergeCheckUserResults merges results from two CheckUser attempts

@@ -27,18 +27,28 @@ Also:
 * `PROXY_REQUIRED=true` (new, optional): instances without any proxy do not
   connect;
 * a logged-in instance whose proxy is unreachable (e.g. the mobile uplink is
-  renewing its IP) is retried automatically, always through the proxy, with
-  backoff 10 s → 20 s → … → 2 min (`disconnectReason` "proxy unavailable (retry
-  in …)"). Upstream never retries, so a short proxy outage left instances
-  offline until reconnected by hand. A rejected password is not retried, and a
-  manual reconnect/logout in the meantime cancels the retry.
+  renewing its IP) is retried automatically, always through the proxy, after
+  10 s, 20 s and then every 30 s (`disconnectReason` "proxy unavailable …").
+  Upstream never retries, so a short proxy outage left instances offline until
+  reconnected by hand. A rejected password is not retried, and a logout or a
+  successful connection in the meantime cancels the retry;
+* while an instance waits for its proxy, `/send/*`, `/user/*` and `/message/*`
+  fail at once (HTTP 500, `proxy unavailable: instance not connected …;
+  nothing was sent`) instead of upstream's ~36 s of reconnect attempts, which
+  outlasted most clients' HTTP timeouts and left them unsure whether the
+  message went out;
+* `/user/check`: when the WhatsApp query fails, upstream answered **200 with
+  `data: null`**, which clients read as "not on WhatsApp" (deleting leads,
+  caching "no WhatsApp"). It is now an error (HTTP 500).
 
 Only WhatsApp traffic is affected: webhooks, S3/MinIO, link previews and media
 downloaded from URLs you send keep using the server connection, as upstream.
 
 Files: `pkg/whatsmeow/service/proxy_failclosed.go` (+ `_test.go`, new),
-`pkg/whatsmeow/service/whatsmeow.go`, `pkg/config/config.go`,
-`pkg/config/env/env.go` (marked "Fork change"/"fork:").
+`pkg/user/service/checkuser_failclosed_test.go` (new),
+`pkg/whatsmeow/service/whatsmeow.go`, `pkg/user/service/user_service.go`,
+`pkg/sendMessage/service/send_service.go`, `pkg/message/service/message_service.go`,
+`pkg/config/config.go`, `pkg/config/env/env.go` (marked "Fork change"/"fork:").
 
 ## Image
 
