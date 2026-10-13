@@ -487,6 +487,9 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 				err = client.Connect()
 				if err != nil {
 					w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Falha na segunda tentativa de conexão: %v", cd.Instance.Id, err)
+					if proxyAddress != "" { // fork: retry through the proxy
+						w.retryWhenProxyIsBack(cd, err)
+					}
 					return
 				}
 			} else if strings.Contains(err.Error(), "username/password authentication failed") {
@@ -495,6 +498,9 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 				return
 			} else {
 				w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Failed to connect: %v", cd.Instance.Id, err)
+				if proxyAddress != "" { // fork: retry through the proxy
+					w.retryWhenProxyIsBack(cd, err)
+				}
 				return
 			}
 		}
@@ -526,6 +532,8 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 		}
 
 	}
+
+	proxyRetry.reset(cd.Instance.Id) // fork: connected, restart the retry backoff
 
 	// Removed auto-reconnect logic to prevent infinite loops
 

@@ -25,7 +25,13 @@ Also:
 * an unknown `PROXY_PROTOCOL`/`protocol` (e.g. a typo) is an error instead of
   silently becoming `http`;
 * `PROXY_REQUIRED=true` (new, optional): instances without any proxy do not
-  connect.
+  connect;
+* a logged-in instance whose proxy is unreachable (e.g. the mobile uplink is
+  renewing its IP) is retried automatically, always through the proxy, with
+  backoff 10 s → 20 s → … → 2 min (`disconnectReason` "proxy unavailable (retry
+  in …)"). Upstream never retries, so a short proxy outage left instances
+  offline until reconnected by hand. A rejected password is not retried, and a
+  manual reconnect/logout in the meantime cancels the retry.
 
 Only WhatsApp traffic is affected: webhooks, S3/MinIO, link previews and media
 downloaded from URLs you send keep using the server connection, as upstream.

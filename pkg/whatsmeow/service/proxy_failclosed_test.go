@@ -21,6 +21,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	config "github.com/evolution-foundation/evolution-go/pkg/config"
+	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 )
 
 func TestResolveProxyAddress(t *testing.T) {
@@ -211,5 +212,58 @@ func TestRejectedProxyPasswordIsDetected(t *testing.T) {
 	ok, fail, targets := px.snapshot()
 	if ok != 0 || fail < 1 || len(targets) != 0 {
 		t.Fatalf("auth ok=%d fail=%d targets=%v", ok, fail, targets)
+	}
+}
+
+func TestProxyRetryBackoff(t *testing.T) {
+	r := &proxyRetrier{attempts: map[string]int{}, pending: map[string]bool{}, base: 10 * time.Second, max: 2 * time.Minute}
+	want := []time.Duration{10 * time.Second, 20 * time.Second, 40 * time.Second, 80 * time.Second, 2 * time.Minute, 2 * time.Minute}
+	for i, w := range want {
+		d, ok := r.next("a")
+		if !ok || d != w {
+			t.Fatalf("attempt %d: got %v %v, want %v", i+1, d, ok, w)
+		}
+		if _, ok := r.next("a"); ok {
+			t.Fatalf("attempt %d: a second retry was scheduled while one is pending", i+1)
+		}
+		r.done("a")
+	}
+	if d, _ := r.next("b"); d != 10*time.Second {
+		t.Fatalf("instances must have independent backoff: %v", d)
+	}
+	r.done("a")
+	r.reset("a")
+	if d, _ := r.next("a"); d != 10*time.Second {
+		t.Fatalf("reset must restart the backoff: %v", d)
+	}
+}
+
+func TestShouldRetryProxy(t *testing.T) {
+	waiting := func() *instance_model.Instance {
+		return &instance_model.Instance{Jid: "5511999999999@s.whatsapp.net",
+			DisconnectReason: proxyRetryReason + " (retry in 10s): socks connect: connection refused"}
+	}
+	if !shouldRetryProxy(waiting(), false) {
+		t.Fatal("a logged-in instance waiting for its proxy must be retried")
+	}
+	cases := map[string]func(*instance_model.Instance) (*instance_model.Instance, bool){
+		"logged out":          func(i *instance_model.Instance) (*instance_model.Instance, bool) { i.Jid = ""; return i, false },
+		"connected meanwhile": func(i *instance_model.Instance) (*instance_model.Instance, bool) { i.Connected = true; return i, false },
+		"state changed": func(i *instance_model.Instance) (*instance_model.Instance, bool) {
+			i.DisconnectReason = "Reconnecting"
+			return i, false
+		},
+		"client connected": func(i *instance_model.Instance) (*instance_model.Instance, bool) { return i, true },
+		"wrong password": func(i *instance_model.Instance) (*instance_model.Instance, bool) {
+			i.DisconnectReason = "proxy: the proxy rejected the username/password"
+			return i, false
+		},
+		"instance deleted (nil)": func(*instance_model.Instance) (*instance_model.Instance, bool) { return nil, false },
+	}
+	for name, mod := range cases {
+		inst, connected := mod(waiting())
+		if shouldRetryProxy(inst, connected) {
+			t.Errorf("%s: must not retry", name)
+		}
 	}
 }
