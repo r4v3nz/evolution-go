@@ -50,6 +50,12 @@ Also:
   `/instance/connect` (upstream: "already running", forever) and, for a device
   not paired yet, by `/instance/qr` polling (at most every 30 s), so the QR code
   shows up instead of an endless "no QR code available".
+* one device store (one bounded Postgres pool, 30 connections) for the whole
+  process. Upstream opened a new pool (`sqlstore.New`) on every instance start
+  and reconnect and never closed the old one, so each reconnect leaked
+  connections until Postgres refused new ones ("sorry, too many clients
+  already"); from then on instances could not start: disconnected, and no QR
+  code.
 
 Only WhatsApp traffic is affected: webhooks, S3/MinIO, link previews and media
 downloaded from URLs you send keep using the server connection, as upstream.
@@ -57,6 +63,7 @@ downloaded from URLs you send keep using the server connection, as upstream.
 Files: `pkg/whatsmeow/service/proxy_failclosed.go` (+ `_test.go`, new),
 `pkg/user/service/checkuser_failclosed_test.go` (new),
 `pkg/whatsmeow/service/stuck_client.go` (new),
+`pkg/whatsmeow/service/device_container.go` (+ `_test.go`, `_pg_test.go`, new),
 `pkg/whatsmeow/service/whatsmeow.go`, `pkg/user/service/user_service.go`,
 `pkg/instance/handler/instance_handler.go`, `pkg/instance/service/instance_service.go`,
 `pkg/sendMessage/service/send_service.go`, `pkg/message/service/message_service.go`,
