@@ -267,6 +267,22 @@ curl -X GET http://localhost:4000/user/contacts \
 
 ---
 
+## Salvar contato
+
+Adiciona um contato à agenda sincronizada da conta WhatsApp ou atualiza o nome salvo quando ele for diferente do nome informado.
+
+**Endpoint**: `POST /user/contact`
+
+**Body**:
+```json
+{
+  "number": "5511999999999",
+  "fullName": "João Silva"
+}
+```
+
+---
+
 ## Privacidade
 
 ### Consultar Privacidade
