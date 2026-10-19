@@ -15,6 +15,7 @@ import (
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
 	whatsmeow_service "github.com/evolution-foundation/evolution-go/pkg/whatsmeow/service"
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/appstate"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 )
@@ -536,9 +537,9 @@ func (u *userService) SetProfileName(data *SetProfileNameStruct, instance *insta
 		return false, err
 	}
 
-	err = client.SetGroupName(context.Background(), types.EmptyJID, data.Name)
+	err = client.SendAppState(context.Background(), appstate.BuildSettingPushName(data.Name))
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to set profile name: %w", err)
 	}
 
 	return true, nil
