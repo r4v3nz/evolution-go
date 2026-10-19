@@ -67,12 +67,13 @@ http://localhost:4000
 
 ---
 
-### Usuários (13 endpoints)
+### Usuários (14 endpoints)
 
 - `POST /user/info` - Informações do usuário
 - `POST /user/check` - Verificar número no WhatsApp
 - `POST /user/avatar` - Obter avatar
 - `GET /user/contacts` - Listar contatos
+- `POST /user/contact` - Adicionar contato ou atualizar o nome na agenda sincronizada do WhatsApp
 - `GET /user/privacy` - Configurações de privacidade
 - `POST /user/privacy` - Atualizar privacidade
 - `POST /user/block` - Bloquear contato
