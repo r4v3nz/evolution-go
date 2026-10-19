@@ -42,6 +42,7 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/evolution-go:fail-closed
             ghcr.io/${{ github.repository_owner }}/evolution-go:${{ steps.version.outputs.version }}-fail-closed
+            ghcr.io/${{ github.repository_owner }}/evolution-go:latest
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.description=Evolution Go (unofficial fork): proxy fails closed
