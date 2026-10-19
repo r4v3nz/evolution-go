@@ -16,6 +16,54 @@ import (
 
 var clientStarting sync.Map // instance id -> struct{}: StartClient in progress
 
+// clientReconnecting suppresses duplicate reconnect work when a websocket
+// close and a proxy retry report the same outage at nearly the same time.
+var clientReconnecting sync.Map // instance id -> struct{}
+
+// remoteLoggedOut records an authoritative LoggedOut event until an operator
+// explicitly starts the instance again (usually to scan a new QR code).
+var remoteLoggedOut sync.Map // instance id -> struct{}
+
+// clientStopping marks an intentional local stop so its resulting
+// events.Disconnected is not mistaken for a transport failure to reconnect.
+var clientStopping sync.Map // instance id -> struct{}
+
+func beginClientStart(instanceId string) bool {
+	_, loaded := clientStarting.LoadOrStore(instanceId, struct{}{})
+	return !loaded
+}
+
+func MarkClientStopping(instanceId string) {
+	clientStopping.Store(instanceId, struct{}{})
+}
+
+// SignalClientStop queues a stop request for the instance loop. The channel is
+// buffered, and a full channel already means a stop request is pending.
+func SignalClientStop(killSignal chan bool) {
+	if killSignal == nil {
+		return
+	}
+	select {
+	case killSignal <- true:
+	default:
+	}
+}
+
+func clearClientLifecycleStop(instanceId string) {
+	clientStopping.Delete(instanceId)
+	remoteLoggedOut.Delete(instanceId)
+}
+
+func isClientStopping(instanceId string) bool {
+	_, ok := clientStopping.Load(instanceId)
+	return ok
+}
+
+func isRemoteLoggedOut(instanceId string) bool {
+	_, ok := remoteLoggedOut.Load(instanceId)
+	return ok
+}
+
 // ClientStarting reports whether StartClient is still setting up the
 // instance (version check, proxy, websocket dial).
 func ClientStarting(instanceId string) bool {

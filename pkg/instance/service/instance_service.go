@@ -260,8 +260,6 @@ func (i instances) Connect(data *ConnectStruct, instance *instance_model.Instanc
 	if !isInstanceRunning {
 		i.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Starting new client instance", instance.Id)
 
-		i.killChannel[instance.Id] = make(chan bool)
-
 		clientData := &whatsmeow_service.ClientData{
 			Instance:      instance,
 			Subscriptions: subscribedEvents,
@@ -325,7 +323,8 @@ func (i instances) Disconnect(instance *instance_model.Instance) (*instance_mode
 	if client.IsConnected() {
 		if client.IsLoggedIn() {
 			i.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Disconnection successful", instance.Id)
-			i.killChannel[instance.Id] <- true
+			whatsmeow_service.MarkClientStopping(instance.Id)
+			whatsmeow_service.SignalClientStop(i.killChannel[instance.Id])
 
 			instance.Events = ""
 
@@ -349,6 +348,7 @@ func (i instances) Logout(instance *instance_model.Instance) (*instance_model.In
 	}
 
 	if client.IsLoggedIn() && client.IsConnected() {
+		whatsmeow_service.MarkClientStopping(instance.Id)
 		err := client.Logout(context.Background())
 		if err != nil {
 			return instance, err
@@ -360,10 +360,7 @@ func (i instances) Logout(instance *instance_model.Instance) (*instance_model.In
 			return instance, err
 		}
 
-		select {
-		case i.killChannel[instance.Id] <- true:
-		case <-time.After(5 * time.Second):
-		}
+		whatsmeow_service.SignalClientStop(i.killChannel[instance.Id])
 
 		delete(i.clientPointer, instance.Id)
 		delete(i.killChannel, instance.Id)
@@ -373,12 +370,10 @@ func (i instances) Logout(instance *instance_model.Instance) (*instance_model.In
 	}
 
 	if client.IsConnected() {
+		whatsmeow_service.MarkClientStopping(instance.Id)
 		client.Disconnect()
 
-		select {
-		case i.killChannel[instance.Id] <- true:
-		case <-time.After(5 * time.Second):
-		}
+		whatsmeow_service.SignalClientStop(i.killChannel[instance.Id])
 
 		delete(i.clientPointer, instance.Id)
 		delete(i.killChannel, instance.Id)
@@ -602,6 +597,7 @@ func (i instances) Delete(id string) error {
 	}
 
 	if i.clientPointer[instance.Id] != nil && i.clientPointer[instance.Id].IsConnected() {
+		whatsmeow_service.MarkClientStopping(instance.Id)
 		if i.clientPointer[instance.Id].IsLoggedIn() {
 			i.clientPointer[instance.Id].Logout(context.Background())
 		}
@@ -611,7 +607,7 @@ func (i instances) Delete(id string) error {
 	// Limpar todos os recursos da instância antes de deletar
 	delete(i.clientPointer, instance.Id)
 	if i.killChannel[instance.Id] != nil {
-		close(i.killChannel[instance.Id])
+		whatsmeow_service.SignalClientStop(i.killChannel[instance.Id])
 		delete(i.killChannel, instance.Id)
 	}
 
@@ -727,8 +723,6 @@ func (i instances) ForceReconnect(instanceId string, number string) error {
 
 	subscribedEvents := strings.Split(instance.Events, ",")
 
-	i.killChannel[instance.Id] = make(chan bool)
-
 	clientData := &whatsmeow_service.ClientData{
 		Instance:      instance,
 		Subscriptions: subscribedEvents,
@@ -751,12 +745,10 @@ func (i instances) ForceReconnect(instanceId string, number string) error {
 
 	if i.clientPointer[instance.Id] != nil {
 		client := i.clientPointer[instance.Id]
+		whatsmeow_service.MarkClientStopping(instance.Id)
 		client.Disconnect()
 
-		select {
-		case i.killChannel[instance.Id] <- true:
-		case <-time.After(5 * time.Second):
-		}
+		whatsmeow_service.SignalClientStop(i.killChannel[instance.Id])
 
 		delete(i.clientPointer, instance.Id)
 		delete(i.killChannel, instance.Id)
