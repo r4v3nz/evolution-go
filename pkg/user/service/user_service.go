@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"time"
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
@@ -17,10 +16,8 @@ import (
 	whatsmeow_service "github.com/evolution-foundation/evolution-go/pkg/whatsmeow/service"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/appstate"
-	"go.mau.fi/whatsmeow/proto/waSyncAction"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
-	"google.golang.org/protobuf/proto"
 )
 
 type UserService interface {
@@ -28,7 +25,6 @@ type UserService interface {
 	CheckUser(data *CheckUserStruct, instance *instance_model.Instance) (*CheckUserCollection, error)
 	GetAvatar(data *GetAvatarStruct, instance *instance_model.Instance) (*types.ProfilePictureInfo, error)
 	GetContacts(instance *instance_model.Instance) ([]ContactInfo, error)
-	SaveContact(data *SaveContactStruct, instance *instance_model.Instance) error
 	GetPrivacy(instance *instance_model.Instance) (types.PrivacySettings, error)
 	SetPrivacy(data *PrivacyStruct, instance *instance_model.Instance) (*types.PrivacySettings, error)
 	BlockContact(data *BlockStruct, instance *instance_model.Instance) (*types.Blocklist, error)
@@ -87,11 +83,6 @@ type CheckUserStruct struct {
 type GetAvatarStruct struct {
 	Number  string `json:"number"`
 	Preview bool   `json:"preview"`
-}
-
-type SaveContactStruct struct {
-	Number   string `json:"number"`
-	FullName string `json:"fullName"`
 }
 
 type BlockStruct struct {
@@ -417,54 +408,6 @@ func (u *userService) GetContacts(instance *instance_model.Instance) ([]ContactI
 
 	return contactsArray, nil
 
-}
-
-func (u *userService) SaveContact(data *SaveContactStruct, instance *instance_model.Instance) error {
-	fullName := strings.TrimSpace(data.FullName)
-	if fullName == "" {
-		return errors.New("contact full name is required")
-	}
-
-	client, err := u.ensureClientConnected(instance.Id)
-	if err != nil {
-		return err
-	}
-
-	jid, ok := utils.ParseJID(data.Number)
-	if !ok || jid.Server != types.DefaultUserServer {
-		return errors.New("invalid phone number")
-	}
-
-	contact, err := client.Store.Contacts.GetContact(context.Background(), jid)
-	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(contact.FullName) == fullName {
-		return nil
-	}
-
-	patch := appstate.PatchInfo{
-		Type: appstate.WAPatchCriticalUnblockLow,
-		Mutations: []appstate.MutationInfo{{
-			Index:   []string{appstate.IndexContact, jid.String()},
-			Version: 2,
-			Value: &waSyncAction.SyncActionValue{
-				ContactAction: &waSyncAction.ContactAction{
-					FullName:                 proto.String(fullName),
-					SaveOnPrimaryAddressbook: proto.Bool(true),
-				},
-			},
-		}},
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if err = client.SendAppState(ctx, patch); err != nil {
-		return err
-	}
-
-	u.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Saved or updated contact %s in WhatsApp address book", instance.Id, jid)
-	return nil
 }
 
 func (u *userService) GetPrivacy(instance *instance_model.Instance) (types.PrivacySettings, error) {

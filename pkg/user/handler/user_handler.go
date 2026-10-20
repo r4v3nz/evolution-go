@@ -13,7 +13,6 @@ type UserHandler interface {
 	CheckUser(ctx *gin.Context)
 	GetAvatar(ctx *gin.Context)
 	GetContacts(ctx *gin.Context)
-	SaveContact(ctx *gin.Context)
 	GetPrivacy(ctx *gin.Context)
 	SetPrivacy(ctx *gin.Context)
 	BlockContact(ctx *gin.Context)
@@ -181,42 +180,6 @@ func (u *userHandler) GetContacts(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": contacts})
-}
-
-// Save a contact in the linked WhatsApp account's address book
-// @Summary Save a WhatsApp contact
-// @Description Add or update a phone contact in the account's synced WhatsApp address book
-// @Tags User
-// @Accept json
-// @Produce json
-// @Param contact body user_service.SaveContactStruct true "Contact data"
-// @Success 200 {object} gin.H "success"
-// @Failure 400 {object} gin.H "Invalid contact data"
-// @Failure 500 {object} gin.H "Internal server error"
-// @Router /user/contact [post]
-func (u *userHandler) SaveContact(ctx *gin.Context) {
-	getInstance := ctx.MustGet("instance")
-	instance, ok := getInstance.(*instance_model.Instance)
-	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
-		return
-	}
-
-	var data user_service.SaveContactStruct
-	if err := ctx.ShouldBindBodyWithJSON(&data); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if data.Number == "" || data.FullName == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number and contact full name are required"})
-		return
-	}
-
-	if err := u.userService.SaveContact(&data, instance); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": gin.H{"number": data.Number, "fullName": data.FullName}})
 }
 
 // Get a user's privacy settings
