@@ -33,6 +33,9 @@ type UserService interface {
 	SetProfilePicture(data *SetProfilePictureStruct, instance *instance_model.Instance) (bool, error)
 	SetProfileName(data *SetProfileNameStruct, instance *instance_model.Instance) (bool, error)
 	SetProfileStatus(data *SetProfileStatusStruct, instance *instance_model.Instance) (bool, error)
+	// Fork: see business_profile.go.
+	GetBusinessProfile(instance *instance_model.Instance) (*BusinessProfile, error)
+	SetBusinessProfile(data *SetBusinessProfileStruct, instance *instance_model.Instance) (*BusinessProfile, error)
 }
 
 type userService struct {

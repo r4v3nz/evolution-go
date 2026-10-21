@@ -21,6 +21,9 @@ type UserHandler interface {
 	SetProfilePicture(ctx *gin.Context)
 	SetProfileName(ctx *gin.Context)
 	SetProfileStatus(ctx *gin.Context)
+	// Fork: see business_profile_handler.go.
+	GetBusinessProfile(ctx *gin.Context)
+	SetBusinessProfile(ctx *gin.Context)
 }
 
 type userHandler struct {

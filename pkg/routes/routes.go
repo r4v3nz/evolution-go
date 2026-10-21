@@ -142,6 +142,9 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 			routes.POST("/profilePicture", r.userHandler.SetProfilePicture)
 			routes.POST("/profileName", r.userHandler.SetProfileName)
 			routes.POST("/profileStatus", r.userHandler.SetProfileStatus)
+			// Fork: WhatsApp Business profile (see pkg/user/service/business_profile.go).
+			routes.GET("/businessProfile", r.userHandler.GetBusinessProfile)
+			routes.POST("/businessProfile", r.userHandler.SetBusinessProfile)
 		}
 	}
 	routes = eng.Group("/message")

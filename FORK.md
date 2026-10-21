@@ -57,6 +57,14 @@ Also:
   already"); from then on instances could not start: disconnected, and no QR
   code.
 
+* `GET /user/businessProfile` and `POST /user/businessProfile` (new) read and
+  edit the WhatsApp Business profile of the instance's own account:
+  description, address, e-mail, up to 2 websites and business hours
+  (categories are read-only). `isBusiness` is false for a regular WhatsApp
+  account, and editing one answers 422. Only the fields sent change; an empty
+  value clears the field. It is a plain `w:biz` server request, like WhatsApp
+  Business Web, not an app state patch.
+
 Only WhatsApp traffic is affected: webhooks, S3/MinIO, link previews and media
 downloaded from URLs you send keep using the server connection, as upstream.
 
@@ -64,6 +72,8 @@ Files: `pkg/whatsmeow/service/proxy_failclosed.go` (+ `_test.go`, new),
 `pkg/user/service/checkuser_failclosed_test.go` (new),
 `pkg/whatsmeow/service/stuck_client.go` (new),
 `pkg/whatsmeow/service/device_container.go` (+ `_test.go`, `_pg_test.go`, new),
+`pkg/user/service/business_profile.go` (+ `_test.go`, new),
+`pkg/user/handler/business_profile_handler.go` (new), `pkg/routes/routes.go`,
 `pkg/whatsmeow/service/whatsmeow.go`, `pkg/user/service/user_service.go`,
 `pkg/instance/handler/instance_handler.go`, `pkg/instance/service/instance_service.go`,
 `pkg/sendMessage/service/send_service.go`, `pkg/message/service/message_service.go`,
