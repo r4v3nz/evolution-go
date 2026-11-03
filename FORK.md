@@ -65,12 +65,24 @@ Also:
   value clears the field. It is a plain `w:biz` server request, like WhatsApp
   Business Web, not an app state patch.
 
+* the WhatsApp client version reaches the **login payload**
+  (`store.SetWAVersion`). Upstream wrote `WHATSAPP_VERSION_*` and the sw.js
+  version only into the companion device props, so logins always carried the
+  version compiled into whatsmeow. On 2026-11-03 that version became too old
+  and sw.js answered HTTP 400: WhatsApp refused every instance with
+  "Client outdated (405)", and no QR code appeared. Now an explicit
+  `WHATSAPP_VERSION_*` wins; otherwise the sw.js version is used only when it is
+  newer than the built-in one. A failed sw.js lookup (non-200 included) is not
+  repeated for 15 min. **Keep whatsmeow up to date** (`go get
+  go.mau.fi/whatsmeow@main`): its built-in version is the fallback.
+
 Only WhatsApp traffic is affected: webhooks, S3/MinIO, link previews and media
 downloaded from URLs you send keep using the server connection, as upstream.
 
 Files: `pkg/whatsmeow/service/proxy_failclosed.go` (+ `_test.go`, new),
 `pkg/user/service/checkuser_failclosed_test.go` (new),
 `pkg/whatsmeow/service/stuck_client.go` (new),
+`pkg/whatsmeow/service/wa_version.go` (+ `_test.go`, new),
 `pkg/whatsmeow/service/device_container.go` (+ `_test.go`, `_pg_test.go`, new),
 `pkg/user/service/business_profile.go` (+ `_test.go`, new),
 `pkg/user/handler/business_profile_handler.go` (new), `pkg/routes/routes.go`,

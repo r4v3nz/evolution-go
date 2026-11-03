@@ -177,9 +177,7 @@ func (f *fakeSOCKS5) snapshot() (ok, fail int, targets []string) {
 }
 
 func TestWebVersionCheckGoesThroughProxy(t *testing.T) {
-	cachedWebVersionMu.Lock()
-	cachedWebVersion = nil
-	cachedWebVersionMu.Unlock()
+	resetWebVersionCache(t)
 
 	px := newFakeSOCKS5(t, "evolution", "right")
 	if _, err := fetchWhatsAppWebVersion(px.addr("evolution", "right")); err == nil {

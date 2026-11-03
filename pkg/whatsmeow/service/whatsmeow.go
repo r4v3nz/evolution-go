@@ -13,6 +13,7 @@ import (
 	"image/png"
 	"io"
 	"math/rand"
+	"net/http"
 	"os"
 	"regexp"
 	"strconv"
@@ -398,8 +399,6 @@ func (w whatsmeowService) startClient(cd *ClientData) {
 		return
 	}
 
-	var version clientVersion
-
 	platformID, ok := waCompanionReg.DeviceProps_PlatformType_value[strings.ToUpper("chrome")]
 	if ok {
 		store.DeviceProps.PlatformType = waCompanionReg.DeviceProps_PlatformType(platformID).Enum()
@@ -411,33 +410,8 @@ func (w whatsmeowService) startClient(cd *ClientData) {
 	store.DeviceProps.Os = &cd.Instance.OsName
 	store.DeviceProps.RequireFullSync = proto.Bool(true)
 
-	if w.config.WhatsappVersionMajor != 0 && w.config.WhatsappVersionMinor != 0 && w.config.WhatsappVersionPatch != 0 {
-		w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] Setting whatsapp version to %d.%d.%d", cd.Instance.Id, w.config.WhatsappVersionMajor, w.config.WhatsappVersionMinor, w.config.WhatsappVersionPatch)
-		version.Major = w.config.WhatsappVersionMajor
-		if err == nil {
-			store.DeviceProps.Version.Primary = proto.Uint32(uint32(version.Major))
-		}
-		version.Minor = w.config.WhatsappVersionMinor
-		if err == nil {
-			store.DeviceProps.Version.Secondary = proto.Uint32(uint32(version.Minor))
-		}
-		version.Patch = w.config.WhatsappVersionPatch
-		if err == nil {
-			store.DeviceProps.Version.Tertiary = proto.Uint32(uint32(version.Patch))
-		}
-	} else {
-		// Try to fetch version from WhatsApp Web
-		webVersion, err := fetchWhatsAppWebVersion(proxyAddress)
-		if err != nil {
-			w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Failed to fetch WhatsApp Web version: %v", cd.Instance.Id, err)
-		} else {
-			w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] Setting whatsapp version from web to %d.%d.%d", cd.Instance.Id, webVersion.Major, webVersion.Minor, webVersion.Patch)
-			version = *webVersion
-			store.DeviceProps.Version.Primary = proto.Uint32(uint32(version.Major))
-			store.DeviceProps.Version.Secondary = proto.Uint32(uint32(version.Minor))
-			store.DeviceProps.Version.Tertiary = proto.Uint32(uint32(version.Patch))
-		}
-	}
+	// Fork change: the version reaches the login payload too (wa_version.go).
+	w.setClientVersion(cd.Instance.Id, proxyAddress)
 
 	// 🔒 FIX: Sempre criar logger, mesmo que WaDebug esteja vazio
 	// Usar "INFO" como nível mínimo para garantir que logs importantes apareçam
@@ -2623,6 +2597,14 @@ var (
 	cachedWebVersionAt time.Time
 	cachedWebVersionMu sync.Mutex
 	webVersionCacheTTL = 1 * time.Hour
+
+	// Fork change: a failed lookup is not repeated for webVersionRetryAfter.
+	// Every instance start asks, and a burst of failing requests from the
+	// mobile IP to WhatsApp is what we want to avoid.
+	webVersionErr        error
+	webVersionErrAt      time.Time
+	webVersionRetryAfter = 15 * time.Minute
+	webVersionURL        = "https://web.whatsapp.com/sw.js"
 )
 
 func fetchWhatsAppWebVersion(proxyAddress string) (*clientVersion, error) {
@@ -2632,17 +2614,37 @@ func fetchWhatsAppWebVersion(proxyAddress string) (*clientVersion, error) {
 	if cachedWebVersion != nil && time.Since(cachedWebVersionAt) < webVersionCacheTTL {
 		return cachedWebVersion, nil
 	}
+	if webVersionErr != nil && time.Since(webVersionErrAt) < webVersionRetryAfter {
+		return nil, webVersionErr
+	}
 
+	v, err := lookupWhatsAppWebVersion(proxyAddress)
+	if err != nil {
+		webVersionErr, webVersionErrAt = err, time.Now()
+		return nil, err
+	}
+	webVersionErr = nil
+	cachedWebVersion, cachedWebVersionAt = v, time.Now()
+	return v, nil
+}
+
+func lookupWhatsAppWebVersion(proxyAddress string) (*clientVersion, error) {
 	// Fork change (fail-closed proxy): through the instance proxy, if any.
 	httpClient, err := webVersionClient(proxyAddress)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := httpClient.Get("https://web.whatsapp.com/sw.js")
+	resp, err := httpClient.Get(webVersionURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch WhatsApp Web version: %v", err)
 	}
 	defer resp.Body.Close()
+
+	// Fork change: an error page has no client_revision; say why instead of
+	// dumping its HTML.
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%s answered HTTP %d", webVersionURL, resp.StatusCode)
+	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -2671,13 +2673,11 @@ func fetchWhatsAppWebVersion(proxyAddress string) (*clientVersion, error) {
 
 			// Log qual padrão funcionou
 			if clientRevision > 0 {
-				cachedWebVersion = &clientVersion{
+				return &clientVersion{
 					Major: 2,
 					Minor: 3000,
 					Patch: clientRevision,
-				}
-				cachedWebVersionAt = time.Now()
-				return cachedWebVersion, nil
+				}, nil
 			}
 		}
 	}
