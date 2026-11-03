@@ -408,7 +408,12 @@ func (w whatsmeowService) startClient(cd *ClientData) {
 	}
 
 	store.DeviceProps.Os = &cd.Instance.OsName
-	store.DeviceProps.RequireFullSync = proto.Bool(true)
+	// Fork change: upstream always asked the phone for the WHOLE chat history on
+	// pairing. On phones with history the upload is heavy, and on 2026-11-03 two
+	// numbers whose sync never finished were unlinked by the phone ("401: logged
+	// out from another device") on their first message. WhatsApp Web asks only
+	// for the recent history; so do we, unless WHATSAPP_FULL_HISTORY_SYNC=true.
+	store.DeviceProps.RequireFullSync = proto.Bool(w.config.FullHistorySync)
 
 	// Fork change: the version reaches the login payload too (wa_version.go).
 	w.setClientVersion(cd.Instance.Id, proxyAddress)

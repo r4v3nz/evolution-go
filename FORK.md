@@ -76,6 +76,13 @@ Also:
   repeated for 15 min. **Keep whatsmeow up to date** (`go get
   go.mau.fi/whatsmeow@main`): its built-in version is the fallback.
 
+* pairing asks the phone only for the **recent** chat history, like WhatsApp
+  Web (`RequireFullSync=false`). Upstream always required the full history: on
+  phones with history the upload is heavy, and on 2026-11-03 two numbers whose
+  initial sync never finished were unlinked by the phone ("401: logged out
+  from another device") on their first message. `WHATSAPP_FULL_HISTORY_SYNC=true`
+  restores the full sync. Only new pairings are affected.
+
 Only WhatsApp traffic is affected: webhooks, S3/MinIO, link previews and media
 downloaded from URLs you send keep using the server connection, as upstream.
 

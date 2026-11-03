@@ -64,6 +64,8 @@ type Config struct {
 	EventIgnoreStatus    bool
 	QrcodeMaxCount       int
 	CheckUserExists      bool
+	// Fork change: RequireFullSync on pairing (WHATSAPP_FULL_HISTORY_SYNC, default false).
+	FullHistorySync bool
 
 	// Logger configurations
 	LogMaxSize    int
@@ -379,6 +381,7 @@ func Load() *Config {
 		EventIgnoreStatus:    eventIgnoreStatus == "true",
 		QrcodeMaxCount:       qrMaxCount,
 		CheckUserExists:      checkUserExists != "false", // Default true, set to false to disable
+		FullHistorySync:      os.Getenv(config_env.WHATSAPP_FULL_HISTORY_SYNC) == "true",
 		AmqpGlobalEvents:     amqpGlobalEvents,
 		AmqpSpecificEvents:   amqpSpecificEvents,
 		NatsUrl:              natsUrl,

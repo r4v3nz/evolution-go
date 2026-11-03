@@ -48,6 +48,8 @@ const (
 	EVENT_IGNORE_STATUS     = "EVENT_IGNORE_STATUS"
 	QRCODE_MAX_COUNT        = "QRCODE_MAX_COUNT"
 	CHECK_USER_EXISTS       = "CHECK_USER_EXISTS"
+	// Fork change: ask the phone for the whole chat history when pairing (default false).
+	WHATSAPP_FULL_HISTORY_SYNC = "WHATSAPP_FULL_HISTORY_SYNC"
 
 	// Logger configurations
 	LOG_MAX_SIZE    = "LOG_MAX_SIZE"
