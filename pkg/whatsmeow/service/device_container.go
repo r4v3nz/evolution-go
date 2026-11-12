@@ -81,7 +81,9 @@ func openDeviceContainer(postgresAuthDB, exPath string, dbLog waLog.Logger) (*sq
 	db.SetConnMaxIdleTime(authDBConnMaxIdleTime)
 
 	container := sqlstore.NewWithDB(db, dialect, dbLog)
-	if err := container.Upgrade(context.Background()); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), sessionLoadTimeout)
+	defer cancel()
+	if err := container.Upgrade(ctx); err != nil {
 		_ = container.Close()
 		return nil, fmt.Errorf("failed to upgrade database: %w", err)
 	}

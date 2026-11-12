@@ -1,7 +1,9 @@
 package instance_repository
 
 import (
+	"context"
 	"fmt"
+	"time"
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	"github.com/gomessguii/logger"
@@ -14,6 +16,8 @@ import (
 	message_model "github.com/evolution-foundation/evolution-go/pkg/message/model"
 	message_repository "github.com/evolution-foundation/evolution-go/pkg/message/repository"
 )
+
+const connectionStateTimeout = 10 * time.Second
 
 type InstanceRepository interface {
 	Create(instance instance_model.Instance) (*instance_model.Instance, error)
@@ -73,8 +77,10 @@ func (i *instanceRepository) GetInstanceByID(instanceId string) (*instance_model
 		return nil, fmt.Errorf("invalid UUID format: %v", err)
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), connectionStateTimeout)
+	defer cancel()
 	var instance instance_model.Instance
-	err := i.db.Where("id = ?", instanceId).First(&instance).Error
+	err := i.db.WithContext(ctx).Where("id = ?", instanceId).First(&instance).Error
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +107,11 @@ func (i *instanceRepository) Update(instance *instance_model.Instance) error {
 }
 
 func (i *instanceRepository) UpdateConnected(userId string, status bool, disconnectReason string) error {
-	return i.db.Model(&instance_model.Instance{}).Where("id = ?", userId).Update("connected", status).Update("disconnect_reason", disconnectReason).Error
+	ctx, cancel := context.WithTimeout(context.Background(), connectionStateTimeout)
+	defer cancel()
+	// Publish the flag and reason atomically: retry decisions must see one state.
+	return i.db.WithContext(ctx).Model(&instance_model.Instance{}).Where("id = ?", userId).
+		Updates(map[string]interface{}{"connected": status, "disconnect_reason": disconnectReason}).Error
 }
 
 func (i *instanceRepository) UpdateQrcode(userId string, qr string) error {

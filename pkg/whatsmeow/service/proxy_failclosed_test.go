@@ -250,11 +250,16 @@ func TestShouldRetryProxy(t *testing.T) {
 	if !shouldRetryProxy(waiting(), false) {
 		t.Fatal("a logged-in instance waiting for its proxy must be retried")
 	}
+	reconnecting := waiting()
+	reconnecting.DisconnectReason = "Reconnecting"
+	if !shouldRetryProxy(reconnecting, false) {
+		t.Fatal("automatic reconnect must not discard the pending proxy retry")
+	}
 	cases := map[string]func(*instance_model.Instance) (*instance_model.Instance, bool){
 		"logged out":          func(i *instance_model.Instance) (*instance_model.Instance, bool) { i.Jid = ""; return i, false },
 		"connected meanwhile": func(i *instance_model.Instance) (*instance_model.Instance, bool) { i.Connected = true; return i, false },
-		"state changed": func(i *instance_model.Instance) (*instance_model.Instance, bool) {
-			i.DisconnectReason = "Reconnecting"
+		"manual stop": func(i *instance_model.Instance) (*instance_model.Instance, bool) {
+			i.DisconnectReason = "Disconnected by operator"
 			return i, false
 		},
 		"client connected": func(i *instance_model.Instance) (*instance_model.Instance, bool) { return i, true },

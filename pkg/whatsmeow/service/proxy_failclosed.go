@@ -184,44 +184,12 @@ func (r *proxyRetrier) reset(id string) {
 	r.mu.Unlock()
 }
 
-// shouldRetryProxy: still logged in, still offline and nothing else changed
-// the instance state since the retry was scheduled (a manual reconnect,
-// logout or a successful connection all overwrite the reason).
+// An automatic restart may temporarily replace the retry reason with
+// Reconnecting. Explicit stop/logout reasons still cancel the pending attempt.
 func shouldRetryProxy(inst *instance_model.Instance, connectedNow bool) bool {
-	return inst != nil && inst.Jid != "" && !inst.Connected && !connectedNow &&
-		strings.HasPrefix(inst.DisconnectReason, proxyRetryReason)
+	return shouldRetryFailedStart(inst, connectedNow, proxyRetryReason)
 }
 
 func (w whatsmeowService) retryWhenProxyIsBack(cd *ClientData, cause error) {
-	id := cd.Instance.Id
-	delay, scheduled := proxyRetry.next(id)
-	// The reason is written even when a retry is already pending: an
-	// automatic reconnect in between (e.g. upstream's on "Disconnected")
-	// overwrites it with "Reconnecting", and the pending retry would then
-	// take that for a manual change and give up for good.
-	reason := fmt.Sprintf("%s (retrying): %v", proxyRetryReason, cause)
-	if scheduled {
-		reason = fmt.Sprintf("%s (retry in %s): %v", proxyRetryReason, delay, cause)
-	}
-	w.loggerWrapper.GetLogger(id).LogWarn("[%s] %s", id, reason)
-	cd.Instance.Connected = false
-	cd.Instance.DisconnectReason = reason
-	if err := w.instanceRepository.UpdateConnected(id, false, reason); err != nil {
-		w.loggerWrapper.GetLogger(id).LogError("[%s] Error updating instance: %s", id, err)
-	}
-	if !scheduled {
-		return
-	}
-	time.AfterFunc(delay, func() {
-		proxyRetry.done(id)
-		inst, err := w.instanceRepository.GetInstanceByID(id)
-		c := w.clientPointer[id]
-		if err != nil || !shouldRetryProxy(inst, c != nil && c.IsConnected()) {
-			return
-		}
-		w.loggerWrapper.GetLogger(id).LogInfo("[%s] Retrying the connection through the proxy", id)
-		if err := w.ReconnectClient(id); err != nil {
-			w.loggerWrapper.GetLogger(id).LogError("[%s] Retry failed to start: %v", id, err)
-		}
-	})
+	w.retryFailedStart(cd, cause, proxyRetryReason, proxyRetry)
 }

@@ -361,15 +361,19 @@ func (w whatsmeowService) startClient(cd *ClientData) {
 	container, err := w.deviceContainer()
 	if err != nil {
 		w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Failed to create container: %v", cd.Instance.Id, err)
+		w.retryAfterStartupFailure(cd, fmt.Errorf("open session store: %w", err))
 		return
 	}
 
 	if cd.Instance.Jid != "" {
 		jid, _ := utils.ParseJID(cd.Instance.Jid)
 		w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] Jid found. Getting device store for jid: %s", cd.Instance.Id, jid)
-		deviceStore, err = container.GetDevice(context.Background(), jid)
+		loadCtx, cancelLoad := context.WithTimeout(context.Background(), sessionLoadTimeout)
+		deviceStore, err = container.GetDevice(loadCtx, jid)
+		cancelLoad()
 		if err != nil {
 			w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Erro ao obter device store: %v", cd.Instance.Id, err)
+			w.retryAfterStartupFailure(cd, fmt.Errorf("load saved session: %w", err))
 			return
 		}
 	} else {
@@ -485,14 +489,26 @@ func (w whatsmeowService) startClient(cd *ClientData) {
 		mycli.notifyStopped()
 	}()
 
+	var cancelConnection context.CancelFunc
+	defer func() {
+		if cancelConnection != nil {
+			cancelConnection()
+		}
+	}()
+	connect := func() error {
+		var connectErr error
+		cancelConnection, connectErr = connectWithStartupTimeout(context.Background(), connectionStartTimeout, client.ConnectContext)
+		return connectErr
+	}
+
 	if client.Store.ID != nil {
 		w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] Already logged in with JID: %s", cd.Instance.Id, client.Store.ID.String())
-		err = client.Connect()
+		err = connect()
 		if err != nil {
 			if strings.Contains(err.Error(), "EOF") {
 				w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Erro de conexão WebSocket (EOF). Tentando reconectar em 5 segundos...", cd.Instance.Id)
 				time.Sleep(5 * time.Second)
-				err = client.Connect()
+				err = connect()
 				if err != nil {
 					w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Falha na segunda tentativa de conexão: %v", cd.Instance.Id, err)
 					if proxyAddress != "" { // fork: retry through the proxy
@@ -519,12 +535,12 @@ func (w whatsmeowService) startClient(cd *ClientData) {
 		// QR codes run out, both of which break passkey pairing (DOC2 §4.3/§4.4).
 		// Instead we Connect() directly and consume *events.QR in myEventHandler
 		// (see handleQRCodes), which pair.go dispatches to every handler anyway.
-		err = client.Connect()
+		err = connect()
 		if err != nil {
 			if strings.Contains(err.Error(), "EOF") {
 				w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Erro de conexão WebSocket (EOF). Tentando reconectar em 5 segundos...", cd.Instance.Id)
 				time.Sleep(5 * time.Second)
-				err = client.Connect()
+				err = connect()
 				if err != nil {
 					w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Falha na segunda tentativa de conexão: %v", cd.Instance.Id, err)
 					return
@@ -541,7 +557,8 @@ func (w whatsmeowService) startClient(cd *ClientData) {
 
 	}
 
-	proxyRetry.reset(cd.Instance.Id) // fork: connected, restart the retry backoff
+	proxyRetry.reset(cd.Instance.Id)
+	startupRetry.reset(cd.Instance.Id) // fork: connected, restart the retry backoff
 	clientStarting.Delete(cd.Instance.Id)
 
 	// Removed auto-reconnect logic to prevent infinite loops

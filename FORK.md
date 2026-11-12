@@ -98,6 +98,19 @@ Files: `pkg/whatsmeow/service/proxy_failclosed.go` (+ `_test.go`, new),
 `pkg/sendMessage/service/send_service.go`, `pkg/message/service/message_service.go`,
 `pkg/config/config.go`, `pkg/config/env/env.go` (marked "Fork change"/"fork:").
 
+## Recovery after a mobile outage
+
+Saved sessions retry setup failures (including a temporarily unavailable session
+store) with a 10/20/30-second backoff. An automatic `Reconnecting` transition or a
+failed restart no longer discards the pending retry. Explicit stop/logout and
+unpaired sessions do not qualify for this recovery.
+
+Session-store initialization and reads are bounded to 20 seconds; connection
+state reads/writes to 10 seconds; websocket setup to 30 seconds. The websocket
+setup timer is stopped on success, so it does not expire a live session. Retry
+polling also survives a temporarily unavailable state database without replacing
+a newer operator action. No retry changes the proxy or bypasses it.
+
 ## Image
 
 `ghcr.io/r4v3nz/evolution-go:fail-closed` (linux/amd64), built by
